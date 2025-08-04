@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ArloRtspPOCProxy": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\temp\\arlo_certs_fixed\\peer.crt\" \"C:\\temp\\arlo_certs_fixed\\private_key.key\""
+    }
+  }
+}
