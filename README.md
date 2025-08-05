@@ -80,3 +80,48 @@ At this point, it looks like it’s working fine. It was stretch to get here, I 
 I was originally thinking about merging this into the scrypted plugin for Arlo, but i cant possibly do it, getting to this point was tough enough.
 
 I don’t expect this to get any attention, but if it just helps one guy out, I’d feel like putting this out here was worth it.
+
+Here is the decompiled android code that shows the ijk options set.. I think most of these options are ffmpeg compatibile too...
+```java
+   public static final void setPlaybackOptions(IjkMediaPlayer ijkMediaPlayer, IjkMediaPlayerOptions options) {
+        Intrinsics.checkNotNullParameter(ijkMediaPlayer, "<this>");
+        Intrinsics.checkNotNullParameter(options, "options");
+        ijkMediaPlayer.setOption(1, "dns_cache_clear", 1L);
+        if (!options.isRecording() && options.getPlaybackMode() == IjkMediaPlayerOptions.PlaybackMode.LIVE) {
+            ijkMediaPlayer.setOption(1, "user_agent", "ijkplayer-android-" + ApplicationComponentHolder.INSTANCE.get().provideAppBuildConfigProvider().getVersionName());
+            ijkMediaPlayer.setOption(1, "rtsp_transport", (!options.isLocalStreaming() || options.isLocalTCP()) ? "tcp" : "udp");
+            ijkMediaPlayer.setOption(4, SyncSampleEntry.TYPE, 0L);
+            optimizedLiveStreamingOptions(ijkMediaPlayer, options);
+            if (options.isLocalStreaming()) {
+                configureAdditionalLocalLiveStreamingOptions(ijkMediaPlayer, options);
+                return;
+            } else {
+                configureAdditionalRemoteLiveStreamingOptions(ijkMediaPlayer);
+                return;
+            }
+        }
+        if (options.isRecording()) {
+            ijkMediaPlayer.setOption(4, "mediacodec-hevc", 1L);
+            ijkMediaPlayer.setOption(4, SyncSampleEntry.TYPE, 1L);
+            ijkMediaPlayer.setOption(4, "enable-accurate-seek", 1L);
+        }
+    }
+
+    private static final void configureAdditionalLocalLiveStreamingOptions(IjkMediaPlayer ijkMediaPlayer, IjkMediaPlayerOptions ijkMediaPlayerOptions) {
+        ijkMediaPlayer.setOption(1, "analyzeduration", 0L);
+        ijkMediaPlayer.setOption(1, "probesize", 32L);
+        ijkMediaPlayer.setOption(1, "fflags", "nobuffer+discardcorrupt");
+        ijkMediaPlayer.setOption(4, "reorder_queue_size", 0L);
+        ijkMediaPlayer.setOption(1, "avioflags", DevicePublicKeyStringDef.DIRECT);
+        ijkMediaPlayer.setOption(1, "max_delay", 0L);
+        ijkMediaPlayer.setOption(1, "flush_packets", 1L);
+        ijkMediaPlayer.setOption(4, "infbuf", 1L);
+        ijkMediaPlayer.setOption(2, "ec", "favor_inter");
+        if (ijkMediaPlayerOptions.getCertFilePath() != null && ijkMediaPlayerOptions.getKeyFilePath() != null) {
+            ijkMediaPlayer.setOption(1, "cert_file", ijkMediaPlayerOptions.getCertFilePath());
+            ijkMediaPlayer.setOption(1, "key_file", ijkMediaPlayerOptions.getKeyFilePath());
+        }
+        ijkMediaPlayer.setOption(1, "use_nonce", "1");
+    }
+
+```
