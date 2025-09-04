@@ -1,11 +1,12 @@
 ﻿using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Security.Authentication;
-using System.Security.Cryptography;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ArloRTSPProxy
 {
@@ -109,10 +110,17 @@ namespace ArloRTSPProxy
 
             try
             {
+                // im trying to optimize buffer sizes here, but not sure if it matters
+                clientTcp.NoDelay = true;
+                clientTcp.ReceiveBufferSize = 1 << 16; // 65536
+                clientTcp.SendBufferSize = 1 << 16; // 65536
                 clientStream = clientTcp.GetStream();
 
                 // Connect to Arlo with mTLS
                 arloTcp = new TcpClient();
+                arloTcp.NoDelay = true;
+                arloTcp.ReceiveBufferSize = 1 << 16; // 65536
+                arloTcp.SendBufferSize = 1 << 16; // 65536
                 await arloTcp.ConnectAsync(_arloHost, _arloPort);
 
                 // Setup SSL stream with client certificate
@@ -184,7 +192,8 @@ namespace ArloRTSPProxy
 
         private async Task ForwardClientToArloAsync()
         {
-            var buffer = new byte[1500];
+            const int CopyBufferSize = 16 * 1024;
+            var buffer = new byte[CopyBufferSize];
 
             try
             {
@@ -193,14 +202,16 @@ namespace ArloRTSPProxy
                     var bytesRead = await _clientStream.ReadAsync(buffer, 0, buffer.Length);
                     if (bytesRead == 0) break;
 
-                    var data = new byte[bytesRead];
-                    Array.Copy(buffer, data, bytesRead);
-
+                    
+                    
                     // Process RTSP requests
                     // use media mode to only have tougher MITM style stuff during the handshake phase
-                    if (!_isMediaMode && IsRTSPRequest(data))
+                    if (!_isMediaMode && IsRTSPRequest(buffer, bytesRead))
                     {
-                        var modifiedData = ModifyRTSPRequest(data);
+                        // Copy only when we actually need to parse/modify
+                        var data = new byte[bytesRead];
+                        Array.Copy(buffer, data, bytesRead);
+                        var modifiedData = ModifyRTSPRequest(data); 
                         await _arloStream.WriteAsync(modifiedData, 0, modifiedData.Length);
 
                         // Check if this was PLAY command
@@ -214,7 +225,7 @@ namespace ArloRTSPProxy
                     else
                     {
                         // Pass through media data
-                        await _arloStream.WriteAsync(data, 0, data.Length);
+                        await _arloStream.WriteAsync(buffer, 0, bytesRead);
                     }
                 }
             }
@@ -227,7 +238,8 @@ namespace ArloRTSPProxy
 
         private async Task ForwardArloToClientAsync()
         {
-            var buffer = new byte[1500];
+            const int CopyBufferSize = 16 * 1024;
+            var buffer = new byte[CopyBufferSize];
 
             try
             {
@@ -240,19 +252,19 @@ namespace ArloRTSPProxy
                         _isMediaMode = false;
                         break;
                     }
-                    
 
-                    var data = new byte[bytesRead];
-                    Array.Copy(buffer, data, bytesRead);
 
                     // Parse RTSP responses for nonce updates
                     if (!_isMediaMode)
                     {
-                        ParseResponseNonce(data);
+                        // Only allocate if we need to parse headers
+                        var head = new byte[bytesRead];
+                        Array.Copy(buffer, head, bytesRead);
+                        ParseResponseNonce(head);
                     }
 
                     // Forward to client
-                    await _clientStream.WriteAsync(data, 0, data.Length);
+                    await _clientStream.WriteAsync(buffer, 0, bytesRead);
                 }
             }
             catch (Exception ex)
@@ -264,9 +276,9 @@ namespace ArloRTSPProxy
             }
         }
 
-        private bool IsRTSPRequest(byte[] data)
+        private bool IsRTSPRequest(byte[] data, int length)
         {
-            var text = Encoding.UTF8.GetString(data, 0, Math.Min(data.Length, 100));
+            var text = Encoding.UTF8.GetString(data, 0, Math.Min(length, 100));
             return text.StartsWith("OPTIONS") || text.StartsWith("DESCRIBE") ||
                    text.StartsWith("SETUP") || text.StartsWith("PLAY") ||
                    text.StartsWith("TEARDOWN");
